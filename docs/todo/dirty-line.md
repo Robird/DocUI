@@ -1,0 +1,1 @@
+设计 SegmentSnapshot ↔ 控件渲染器之间的缓存/dirty-line 机制，减少重复构建成本。

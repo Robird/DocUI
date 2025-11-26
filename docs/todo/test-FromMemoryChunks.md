@@ -1,0 +1,1 @@
+为 FromMemoryChunks、ReplaceLineSegments 等新增单测，覆盖 CR/LF/跨 chunk 断行
