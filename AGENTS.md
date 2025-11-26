@@ -66,3 +66,6 @@
 - 2025-11-21：`SegmentSnapshot` 对外改用 `ReadOnlyMemory<char>` 内容 API，去掉 `ReadOnlySpan<char>` 入口以避免零拷贝误导。
 - 2025-11-21：新增 `docs/design/text-buffer-pipeline.md`，确立 `ITextBuffer`/`ITextReadOnly` 分层、PieceTree/Rope 常驻缓冲 + `SegmentSnapshotBuilder` overlay 的渲染方案与优化目标。
 - 2025-11-26：`SegmentSnapshot` 的长度与偏移统一改为忽略换行符，`WithReplace` 通过逻辑→物理索引转换串联字符串替换，避免隐式 `\n` 干扰定位。
+- 2025-11-27：`OverlayBuilder` 引入 `InsertSegmentsCore` span 批量插入，公开 API 自动拆分 CR/LF 并通过 `SplitLineAt` 创建新行，私有 core 仅接受无换行段（Debug.Assert 检查）。
+- 2025-11-27：单段 `OverlayBuilder.Insert` 直接调用 `InsertNormalizedSegment`，去掉临时 `ReadOnlySpan` 包装回环。
+- 2025-11-27：`OverlayBuilder` 清理行级插入 API，新增按全局 offset 与 (line,column) 的 `Insert` 重载，所有外部插入统一走 `InsertNormalizedSegments`，并以 `EnsureDocumentInitialized` 取代公开空行追加。
