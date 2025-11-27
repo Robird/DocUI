@@ -19,6 +19,7 @@ internal struct StructList<T> {
     private int _count;
 
     private const int DefaultCapacity = 4;
+    private const double TrimThreshold = 0.9;
 
     #region 构造与初始化
 
@@ -199,7 +200,11 @@ internal struct StructList<T> {
         _count = 0;
     }
 
-    /// <summary>移除并返回最后一个元素（Python 风格）。</summary>
+    /// <summary>移除并返回列表的最后一个元素。</summary>
+    /// <remarks>
+    /// 等效于 <c>var item = list.Last(); list.RemoveAt(list.Count - 1); return item;</c>，
+    /// 但更高效（单次边界检查）。
+    /// </remarks>
     /// <exception cref="InvalidOperationException">列表为空时抛出。</exception>
     public T Pop() {
         if (_count == 0)
@@ -324,9 +329,10 @@ internal struct StructList<T> {
         }
     }
 
-    /// <summary>释放多余容量。</summary>
+    /// <summary>释放多余容量（当使用率低于 90% 时收缩）。</summary>
+    /// <remarks>池化场景下不建议使用，因为会分配新数组而非从池租借。</remarks>
     public void TrimExcess() {
-        if (_count < Capacity * 0.9) {
+        if (_count < Capacity * TrimThreshold) {
             SetCapacity(_count);
         }
     }
