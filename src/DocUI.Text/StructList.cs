@@ -72,6 +72,12 @@ internal struct StructList<T> {
         }
     }
 
+    /// <summary>直接写入指定索引的元素。</summary>
+    public void Set(int index, in T item) {
+        if ((uint)index >= (uint)_count) ThrowIndexOutOfRange(nameof(index));
+        _items[index] = item;
+    }
+
     /// <summary>获取有效区域的 Span 视图。</summary>
     public readonly Span<T> AsSpan() =>
         _items is null ? Span<T>.Empty : _items.AsSpan(0, _count);
@@ -85,7 +91,7 @@ internal struct StructList<T> {
     #region 添加与插入
 
     /// <summary>在末尾添加元素。</summary>
-    public void Add(T item) {
+    public void Add(in T item) {
         if (_count >= Capacity)
             Grow(_count + 1);
         _items[_count++] = item;
@@ -100,7 +106,7 @@ internal struct StructList<T> {
     }
 
     /// <summary>在指定位置插入元素。</summary>
-    public void Insert(int index, T item) {
+    public void Insert(int index, in T item) {
         if ((uint)index > (uint)_count)
             ThrowIndexOutOfRange(nameof(index));
 
@@ -208,38 +214,34 @@ internal struct StructList<T> {
         return true;
     }
 
-    /// <summary>查看最后一个元素但不移除。</summary>
-    public readonly ref T Peek() {
-        if (_count == 0)
-            ThrowEmptyList();
-        return ref _items[_count - 1];
-    }
-
-    /// <summary>按值安全读取指定索引的元素（不会返回 ref）。</summary>
-    public readonly T Get(int index) {
-        if ((uint)index >= (uint)_count) ThrowIndexOutOfRange(nameof(index));
-        return _items[index];
-    }
-
-    /// <summary>尝试查看最后一个元素但不移除（无异常版本）。</summary>
-    public readonly bool TryPeek(out T item) {
-        if (_count == 0) {
-            item = default!;
-            return false;
-        }
-        item = _items[_count - 1];
-        return true;
-    }
-
-    /// <summary>查看第一个元素。</summary>
+    /// <summary>
+    /// 获取第一个元素的引用。
+    /// </summary>
+    /// <remarks>
+    /// 设计决策：不提供 TryFirst，调用方应使用 <see cref="IsEmpty"/> 预检查。
+    /// 理由：Try 模式的 out 参数会产生值拷贝，违背 StructList 的零拷贝设计目标。
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">列表为空。</exception>
     public readonly ref T First() {
         if (_count == 0)
             ThrowEmptyList();
         return ref _items[0];
     }
 
-    /// <summary>查看最后一个元素。</summary>
-    public readonly ref T Last() => ref Peek();
+    /// <summary>
+    /// 获取最后一个元素的引用。
+    /// </summary>
+    /// <remarks>
+    /// 设计决策：不提供 TryLast，调用方应使用 <see cref="IsEmpty"/> 预检查。
+    /// 理由：Try 模式的 out 参数会产生值拷贝，违背 StructList 的零拷贝设计目标。
+    /// 另注：不提供 Peek() 别名，避免混入栈/队列语义；StructList 锚定 List 实现。
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">列表为空。</exception>
+    public readonly ref T Last() {
+        if (_count == 0)
+            ThrowEmptyList();
+        return ref _items[_count - 1];
+    }
 
     #endregion
 
@@ -249,17 +251,17 @@ internal struct StructList<T> {
     /// 二分查找，返回匹配元素的索引。
     /// 若未找到，返回负数，其按位取反（~result）为应插入位置。
     /// </summary>
-    public readonly int BinarySearch(T item) {
-        return BinarySearch(0, _count, item, Comparer<T>.Default);
+    public readonly int BinarySearch(in T item) {
+        return BinarySearch(0, _count, in item, Comparer<T>.Default);
     }
 
     /// <summary>使用自定义比较器进行二分查找。</summary>
-    public readonly int BinarySearch(T item, IComparer<T> comparer) {
-        return BinarySearch(0, _count, item, comparer);
+    public readonly int BinarySearch(in T item, IComparer<T> comparer) {
+        return BinarySearch(0, _count, in item, comparer);
     }
 
     /// <summary>在指定范围内二分查找。</summary>
-    public readonly int BinarySearch(int index, int count, T item, IComparer<T>? comparer) {
+    public readonly int BinarySearch(int index, int count, in T item, IComparer<T>? comparer) {
         if (index < 0 || count < 0 || index + count > _count)
             ThrowArgumentOutOfRange();
 

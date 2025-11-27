@@ -17,6 +17,7 @@
 `MARKDOWN-VS-ASCIIDOC.md`: 格式选择的详细对比分析（已决策：选择 Markdown）。
 `USER-STORY-IDE.md`: AI Coder IDE 的完整设计稿（Markdown UI 原型）。
 `TUI-RESEARCH.md`: TUI 库与终端 IDE 调研报告（技术选型参考）。
+
 `LANGUAGE-ARCHITECTURE-DECISION.md`: 编程语言与架构选型深度分析（已决策：C# + Roslyn）。
 
 ## 项目状态（2025-11-18）
@@ -69,3 +70,6 @@
 - 2025-11-27：`OverlayBuilder` 引入 `InsertSegmentsCore` span 批量插入，公开 API 自动拆分 CR/LF 并通过 `SplitLineAt` 创建新行，私有 core 仅接受无换行段（Debug.Assert 检查）。
 - 2025-11-27：单段 `OverlayBuilder.Insert` 直接调用 `InsertNormalizedSegment`，去掉临时 `ReadOnlySpan` 包装回环。
 - 2025-11-27：`OverlayBuilder` 清理行级插入 API，新增按全局 offset 与 (line,column) 的 `Insert` 重载，所有外部插入统一走 `InsertNormalizedSegments`，并以 `EnsureDocumentInitialized` 取代公开空行追加。
+- 2025-11-27：`StructList<T>` 的 `Add`/`Insert`/`BinarySearch` 入参改为 `in T`，降低大值类型复制成本。
+- 2025-11-27：`StructList<T>` 移除未用的 `Get` 并新增 `Set(int index, in T item)` 以便原位覆盖元素。
+- 2025-11-27：`StructList<T>` 采用 V3 极简方案：删除 `Peek`/`TryPeek`/`Last` 别名，仅保留 `First()`/`Last()` 返回 `ref T`；不提供 Try 版本以坚守零拷贝原则，调用方应使用 `IsEmpty` 预检查。
