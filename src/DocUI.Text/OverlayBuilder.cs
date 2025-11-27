@@ -16,6 +16,13 @@ public class OverlayBuilder {
         public void InvalidateOffset() => Offset = -1;
     }
 
+    /// <summary>
+    /// 用于按 Offset 字段二分查找 LineMut 的键选择器。
+    /// </summary>
+    private readonly struct LineOffsetSelector : IKeySelector<LineMut, int> {
+        public static int GetKey(in LineMut item) => item.Offset;
+    }
+
     private StructList<LineMut> _lines;
     private bool _offsetsDirty;
 
@@ -317,7 +324,7 @@ public class OverlayBuilder {
             throw new ArgumentOutOfRangeException(nameof(offset));
 
         // 二分查找：找到 Offset <= offset 的最后一行
-        int lineIndex = _lines.BinarySearchBy(offset, static line => line.Offset);
+        int lineIndex = _lines.BinarySearchBy<int, LineOffsetSelector>(offset);
 
         if (lineIndex < 0) {
             // 未精确匹配，~lineIndex 是"应插入位置"，减 1 得到包含该 offset 的行

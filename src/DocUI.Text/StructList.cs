@@ -274,38 +274,39 @@ internal struct StructList<T> {
         return BinarySearch(0, _count, in item, Comparer<T>.Default);
     }
 
-    /// <summary>使用自定义比较器进行二分查找。</summary>
-    public readonly int BinarySearch(in T item, IComparer<T> comparer) {
-        return BinarySearch(0, _count, in item, comparer);
-    }
-
-    /// <summary>在指定范围内二分查找。</summary>
-    public readonly int BinarySearch(int index, int count, in T item, IComparer<T>? comparer) {
+    /// <summary>在指定范围内使用自定义比较器二分查找。</summary>
+    /// <param name="index">起始索引。</param>
+    /// <param name="count">搜索范围元素数。</param>
+    /// <param name="item">要查找的元素。</param>
+    /// <param name="comparer">比较器，传入 null 使用默认比较器。</param>
+    public readonly int BinarySearch(int index, int count, in T item, IComparer<T>? comparer = null) {
         if (index < 0 || count < 0 || index + count > _count)
             ThrowArgumentOutOfRange();
 
-        return Array.BinarySearch(_items, index, count, item, comparer);
+        return Array.BinarySearch(_items, index, count, item, comparer ?? Comparer<T>.Default);
     }
 
     /// <summary>
-    /// 使用选择器进行二分查找（适用于按某字段查找）。
+    /// 使用键选择器进行二分查找（零分配高性能版本）。
     /// </summary>
     /// <typeparam name="TKey">用于比较的键类型。</typeparam>
+    /// <typeparam name="TSelector">实现 <see cref="IKeySelector{T, TKey}"/> 的选择器类型。</typeparam>
     /// <param name="key">要查找的键值。</param>
-    /// <param name="keySelector">从元素提取键的函数。</param>
-    public readonly int BinarySearchBy<TKey>(TKey key, Func<T, TKey> keySelector)
-        where TKey : IComparable<TKey> {
-        return BinarySearchBy(key, keySelector, Comparer<TKey>.Default);
-    }
-
-    /// <summary>使用选择器和自定义比较器进行二分查找。</summary>
-    public readonly int BinarySearchBy<TKey>(TKey key, Func<T, TKey> keySelector, IComparer<TKey> comparer) {
+    /// <returns>匹配元素的索引，或负数（按位取反得到应插入位置）。</returns>
+    /// <remarks>
+    /// 设计决策：使用 static abstract interface members 实现零开销抽象。
+    /// 调用方需定义实现 <see cref="IKeySelector{T, TKey}"/> 的 struct，JIT 会为每个
+    /// TSelector 生成特化代码，静态方法调用可被内联。
+    /// </remarks>
+    public readonly int BinarySearchBy<TKey, TSelector>(TKey key)
+        where TKey : IComparable<TKey>
+        where TSelector : IKeySelector<T, TKey> {
         int lo = 0;
         int hi = _count - 1;
 
         while (lo <= hi) {
             int mid = lo + ((hi - lo) >> 1);
-            int cmp = comparer.Compare(keySelector(_items[mid]), key);
+            int cmp = TSelector.GetKey(in _items[mid]).CompareTo(key);
 
             if (cmp == 0)
                 return mid;

@@ -73,3 +73,4 @@
 - 2025-11-27：`StructList<T>` 的 `Add`/`Insert`/`BinarySearch` 入参改为 `in T`，降低大值类型复制成本。
 - 2025-11-27：`StructList<T>` 移除未用的 `Get` 并新增 `Set(int index, in T item)` 以便原位覆盖元素。
 - 2025-11-27：`StructList<T>` 采用 V3 极简方案：删除 `Peek`/`TryPeek`/`Last` 别名，仅保留 `First()`/`Last()` 返回 `ref T`；不提供 Try 版本以坚守零拷贝原则，调用方应使用 `IsEmpty` 预检查。
+- 2025-11-27：`StructList<T>.BinarySearchBy` 重构为 static abstract interface members 方案：新增 `IKeySelector<T,TKey>` 接口，`BinarySearchBy<TKey, TSelector>(key)` 通过泛型特化实现零开销抽象，删除原 `Func` 委托版本。
