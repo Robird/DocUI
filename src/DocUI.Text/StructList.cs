@@ -23,6 +23,7 @@ internal struct StructList<T> {
     #region 构造与初始化
 
     /// <summary>使用指定初始容量创建。</summary>
+    /// <remarks>推荐的标准构造方式。若配合 ArrayPool 使用，请改用 <see cref="StructList(T[])"/>。</remarks>
     public StructList(int capacity) {
         if (capacity < 0) throw new ArgumentOutOfRangeException(nameof(capacity));
         _items = capacity == 0 ? Array.Empty<T>() : new T[capacity];
@@ -30,13 +31,26 @@ internal struct StructList<T> {
     }
 
     /// <summary>使用外部提供的数组创建（用于池化场景）。</summary>
+    /// <remarks>
+    /// ⚠️ 调用方负责数组的生命周期管理（如归还到 ArrayPool）。
+    /// 传入 null 会被静默替换为 <see cref="Array.Empty{T}"/>，但这通常表示调用方 bug。
+    /// </remarks>
+    /// <param name="backingArray">后备数组，不应为 null。</param>
     public StructList(T[] backingArray) {
+        Debug.Assert(backingArray is not null, "backingArray should not be null; use StructList(int) for empty initialization.");
         _items = backingArray ?? Array.Empty<T>();
         _count = 0;
     }
 
-    /// <summary>使用外部数组并设置初始有效元素数。</summary>
+    /// <summary>使用外部数组并设置初始有效元素数（用于包装已有数据）。</summary>
+    /// <remarks>
+    /// 适用场景：将已填充数据的租用数组包装为 StructList 进行后续操作。
+    /// ⚠️ <paramref name="initialCount"/> 之前的元素被视为有效数据，不会被清零。
+    /// </remarks>
+    /// <param name="backingArray">后备数组，不应为 null。</param>
+    /// <param name="initialCount">初始有效元素数，必须 ≤ 数组长度。</param>
     public StructList(T[] backingArray, int initialCount) {
+        Debug.Assert(backingArray is not null, "backingArray should not be null.");
         if (initialCount < 0) throw new ArgumentOutOfRangeException(nameof(initialCount));
         _items = backingArray ?? Array.Empty<T>();
         if (initialCount > _items.Length) throw new ArgumentOutOfRangeException(nameof(initialCount));
@@ -364,7 +378,7 @@ internal struct StructList<T> {
         }
 
         var newItems = new T[capacity];
-        if (_count > 0) {
+        if (_count > 0 && _items is not null) {
             Array.Copy(_items, newItems, Math.Min(_count, capacity));
         }
         _items = newItems;
