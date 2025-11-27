@@ -74,3 +74,8 @@
 - 2025-11-27：`StructList<T>` 移除未用的 `Get` 并新增 `Set(int index, in T item)` 以便原位覆盖元素。
 - 2025-11-27：`StructList<T>` 采用 V3 极简方案：删除 `Peek`/`TryPeek`/`Last` 别名，仅保留 `First()`/`Last()` 返回 `ref T`；不提供 Try 版本以坚守零拷贝原则，调用方应使用 `IsEmpty` 预检查。
 - 2025-11-27：`StructList<T>.BinarySearchBy` 重构为 static abstract interface members 方案：新增 `IKeySelector<T,TKey>` 接口，`BinarySearchBy<TKey, TSelector>(key)` 通过泛型特化实现零开销抽象，删除原 `Func` 委托版本。
+- 2025-11-27：审查 `StructList<T>`，确认 API/实现已接近定稿，但仍需在进入单测前补充“避免按值复制”的使用约束与 `SetCapacity` 的容量断言。
+- 2025-11-27：`StructList<T>` XML Doc 增补强警告与使用准则（字段持有、ref 传递、ArrayPool 生命周期管理等），作为“禁止复制”策略的可交付部分。
+- 2025-11-27：`StructList<T>` 引入 `_version` + fail-fast 枚举器，所有结构性修改都会 bump 版本并在迭代时抛出 `InvalidOperationException`，同时建立 `tests/DocUI.Text.Tests` xUnit 项目补足枚举器相关单测。
+- 2025-11-27：`DocUI.Text.Tests` 添加 `StructListBasicTests` 与 `StructListAdvancedTests`，覆盖 Add/Insert/Remove/Reset/Detach/Span 访问、容量管理与二分查找等主流程，`dotnet test` 全部通过。
+- 2025-11-27：采样 SubAgent 建议：StructList 的“禁止复制”策略暂定为“强化 XML Doc + 内部 Roslyn Analyzer + Debug Guard”，枚举器行为倾向引入 `_version` fail-fast 并配套文档/单测。
