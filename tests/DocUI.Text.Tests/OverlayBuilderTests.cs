@@ -47,7 +47,7 @@ public class OverlayBuilderTests {
         var segments = CreateBuilder("line1\nline2\nline3");
         var builder = new OverlayBuilder(segments);
         builder.InsertAt(0, "<");
-        builder.InsertAt(builder.SourceLength, ">");
+        builder.InsertAt(builder.Length, ">");
         builder.SurroundRange(6, 11, "[", "]");
 
         var result = builder.Build();

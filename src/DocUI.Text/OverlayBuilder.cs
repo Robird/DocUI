@@ -55,9 +55,7 @@ public class OverlayBuilder {
     }
 
     private readonly SegmentListBuilder _builder;
-    private readonly int _sourceLength;
     private readonly List<PendingOverlay> _pendingOverlays = new();
-    private int _nextSequence;
 
     /// <summary>
     /// 创建一个新的叠加层生成器。
@@ -65,11 +63,10 @@ public class OverlayBuilder {
     /// <param name="builder">已初始化的段列表构建器，包含原始文本。</param>
     public OverlayBuilder(SegmentListBuilder builder) {
         _builder = builder ?? throw new ArgumentNullException(nameof(builder));
-        _sourceLength = builder.Length;
     }
 
-    /// <summary>原始文本长度（Build 前的快照长度）。</summary>
-    public int SourceLength => _sourceLength;
+    /// <summary>当前文本长度。</summary>
+    public int Length => _builder.Length;
 
     /// <summary>已声明的叠加操作数量。</summary>
     public int PendingCount => _pendingOverlays.Count;
@@ -87,7 +84,7 @@ public class OverlayBuilder {
     /// <param name="priority">优先级（默认 0，数值越小在同一位置越靠前）。</param>
     /// <exception cref="ArgumentOutOfRangeException">偏移超出原始文本范围。</exception>
     public void InsertAt(int offset, ReadOnlyMemory<char> content, int priority = 0) {
-        ValidateOffset(offset, allowEnd: true);
+        ValidateOffset(offset);
         AddOverlay(offset, content, priority);
     }
 
@@ -103,7 +100,7 @@ public class OverlayBuilder {
         if (content.IsEmpty)
             return;
 
-        _pendingOverlays.Add(new PendingOverlay(offset, content, priority, _nextSequence++));
+        _pendingOverlays.Add(new PendingOverlay(offset, content, priority, _pendingOverlays.Count));
     }
 
     #endregion
@@ -117,9 +114,10 @@ public class OverlayBuilder {
     /// <param name="column">列偏移（0-based）。</param>
     /// <param name="content">要插入的内容。</param>
     /// <param name="priority">优先级（默认 0，数值越小在同一位置越靠前）。</param>
+    /// <exception cref="ArgumentOutOfRangeException">行或列超出范围。</exception>
     public void InsertAtLine(int line, int column, ReadOnlyMemory<char> content, int priority = 0) {
+        // GetOffset 内部会验证 line/column 范围
         int offset = _builder.GetOffset(line, column);
-        ValidateOffset(offset, allowEnd: true);
         AddOverlay(offset, content, priority);
     }
 
@@ -235,7 +233,6 @@ public class OverlayBuilder {
         }
 
         _pendingOverlays.Clear();
-        _nextSequence = 0;
 
         return _builder;
     }
@@ -245,29 +242,29 @@ public class OverlayBuilder {
     /// </summary>
     public void Clear() {
         _pendingOverlays.Clear();
-        _nextSequence = 0;
     }
 
     #endregion
 
     #region 验证
 
-    private void ValidateOffset(int offset, bool allowEnd) {
-        int max = allowEnd ? _sourceLength : _sourceLength - 1;
-        if (offset < 0 || offset > max) {
+    private void ValidateOffset(int offset) {
+        int length = _builder.Length;
+        if (offset < 0 || offset > length) {
             throw new ArgumentOutOfRangeException(nameof(offset),
-                $"Offset {offset} is out of range [0, {max}].");
+                $"Offset {offset} is out of range [0, {length}].");
         }
     }
 
     private void ValidateRange(int start, int end) {
-        if (start < 0 || start > _sourceLength) {
+        int length = _builder.Length;
+        if (start < 0 || start > length) {
             throw new ArgumentOutOfRangeException(nameof(start),
-                $"Start {start} is out of range [0, {_sourceLength}].");
+                $"Start {start} is out of range [0, {length}].");
         }
-        if (end < 0 || end > _sourceLength) {
+        if (end < 0 || end > length) {
             throw new ArgumentOutOfRangeException(nameof(end),
-                $"End {end} is out of range [0, {_sourceLength}].");
+                $"End {end} is out of range [0, {length}].");
         }
         if (start > end) {
             throw new ArgumentException($"Start {start} must not be greater than end {end}.");
