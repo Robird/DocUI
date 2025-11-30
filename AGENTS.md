@@ -58,7 +58,14 @@
 8. **预览驱动编辑**：Select → Preview → Confirm → Apply，零意外编辑流程
 
 ## 最新记忆
-- 2025-11-20：概念稿更新 `MarkerPalette.Allocate(IText text, int count)`，通过检测 `IText.Contains` 退避正文冲突，支撑 LLM `str_replace` 多匹配场景的多选区提示与后续按选区 id 交互。
+- 2025-11-30：`OverlayBuilder` 重构为接收 `SegmentListBuilder` 参数，`Build()` 现在直接往持有的 builder 中从后往前插入 overlay 并返回它。行列 API（`InsertAtLine`/`SurroundRangeLines`）从 `OverlayBuilderLineAdapter` 合并入 `OverlayBuilder`，`OverlayBuilderLineAdapter.cs` 已废弃（重命名为 `.deprecated`）。
+  - `SegmentListBuilder`：底层段列表操作器，即时生效，每次插入改变后续 offset
+  - `OverlayBuilder`：渲染期叠加层生成器，基于原始文本坐标的声明式 API，支持 `InsertAt`/`SurroundRange`，`Build()` 时排序后统一应用
+- 2025-11-28：为 OverlayBuilder 整合 OverlayBuilderLineAdapter 采样三套方案（Segment-native、持久化 Snapshot、Multi-LOD），已分别落地为 `docs/design/overlaybuilder/option-*.md`。
+- 2025-11-28：OverlayBuilder 重构方案二次采样（消除 OverlayBuilderLineAdapter，内部使用已分行结构），新增三个方案文档：
+  - `unified-overlay-builder.md`：方案 A 完整版，内部改为 `StructList<LineData>` 按行存储，直接集成行列 API
+  - `option-D-lazy-facade.md`：懒加载外观模式，保持扁平存储，通过 `Lines` 视图属性 + 可插拔 `ICoordinateSystem` 提供行列能力
+  - `option-E-dual-index.md`：双层索引 + 延迟物化，仅存 `int[]` 行起始偏移，行长度/内容按需从偏移差值推导
 - 2025-11-20：创建 `DocUI.Text.Abstractions` 项目，抽象 `ITextBuffer/ITextSnapshot/ITextSnapshotLine`，并交付首个基于字符串分段的 `SegmentSnapshot` 最小实现，后续渲染/编辑管道可以在此基础上扩展。
 - 2025-11-20：`SegmentSnapshot` 升级为多 segment + Legend metadata 架构，新增 `FromSnapshot/FromMemoryChunks` 工厂与 `ReplaceLineSegments` 等编辑 API，概念稿同步引用 `SegmentSnapshot` 作为渲染期管道。
 - 2025-11-20：`TextBox` 将 Legend 与围栏渲染逻辑下移到 `Paragraph`/`CodeFence` 组件，控件自身仅负责生成数据并分发，以便在其他场景复用。

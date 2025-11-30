@@ -1,474 +1,277 @@
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
+using System;
 
 namespace DocUI.Text;
 
+/// <summary>
+/// 渲染期叠加层生成器。
+/// 基于 <see cref="SegmentListBuilder"/> 的原始坐标，声明式地添加叠加标记。
+/// 调用 <see cref="Build"/> 时统一应用所有叠加操作到底层 builder。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 本类的所有操作都基于原始文本的坐标系（即 Build 调用前的坐标），
+/// 不会因为先前的插入而导致坐标漂移。这使得调用顺序无关紧要。
+/// </para>
+/// <para>
+/// 典型用例：为选区添加首尾标记、为代码块添加围栏、插入行号等渲染期装饰。
+/// </para>
+/// </remarks>
 public class OverlayBuilder {
-    private struct LineMut {
-        /// <summary>一行内的连续多段字符，不含换行符。</summary>
-        public StructList<ReadOnlyMemory<char>> Segments;
-        /// <summary>以 char 为单位的本行总长度（不含换行符）。</summary>
-        public int Length;
-        /// <summary>以 char 为单位的行起始偏移（Lazy 更新，-1 表示脏）。</summary>
-        public int Offset;
-
-        /// <summary>标记 Offset 需要重算。</summary>
-        public void InvalidateOffset() => Offset = -1;
-    }
-
     /// <summary>
-    /// 用于按 Offset 字段二分查找 LineMut 的键选择器。
+    /// 表示一个待应用的叠加操作。
     /// </summary>
-    private readonly struct LineOffsetSelector : IKeySelector<LineMut, int> {
-        public static int GetKey(in LineMut item) => item.Offset;
-    }
+    private readonly struct PendingOverlay : IComparable<PendingOverlay> {
+        /// <summary>基于原始文本的全局字符偏移。</summary>
+        public readonly int Offset;
 
-    private StructList<LineMut> _lines;
-    private bool _offsetsDirty;
+        /// <summary>要插入的内容。</summary>
+        public readonly ReadOnlyMemory<char> Content;
 
-    /// <summary>行数。</summary>
-    public int LineCount => _lines.Count;
+        /// <summary>
+        /// 优先级，用于同一 offset 有多个插入时的排序。
+        /// 数值越小越先插入（即在最终文本中越靠前）。
+        /// </summary>
+        public readonly int Priority;
 
-    /// <summary>总字符数（不含换行符）。</summary>
-    public int Length {
-        get {
-            if (_lines.IsEmpty) return 0;
-            EnsureOffsets();
-            ref var last = ref _lines.Last();
-            return last.Offset + last.Length;
+        /// <summary>声明顺序，用于在 offset 和 priority 完全相同时保持稳定排序。</summary>
+        public readonly int Sequence;
+
+        public PendingOverlay(int offset, ReadOnlyMemory<char> content, int priority, int sequence) {
+            Offset = offset;
+            Content = content;
+            Priority = priority;
+            Sequence = sequence;
+        }
+
+        /// <summary>
+        /// 比较器：先按 Offset 升序，再按 Priority 升序。
+        /// </summary>
+        public int CompareTo(PendingOverlay other) {
+            int cmp = Offset.CompareTo(other.Offset);
+            if (cmp != 0) return cmp;
+            cmp = Priority.CompareTo(other.Priority);
+            return cmp != 0 ? cmp : Sequence.CompareTo(other.Sequence);
         }
     }
 
+    private readonly SegmentListBuilder _builder;
+    private readonly int _sourceLength;
+    private readonly List<PendingOverlay> _pendingOverlays = new();
+    private int _nextSequence;
+
     /// <summary>
-    /// 在指定行的指定字符偏移处插入一段不含换行符的文本。
+    /// 创建一个新的叠加层生成器。
     /// </summary>
-    /// <param name="lineIndex">目标行索引。</param>
-    /// <param name="offset">行内字符偏移（0 = 行首）。</param>
-    /// <param name="segment">要插入的文本段（不能含换行符）。</param>
-    private void InsertSegmentCore(int lineIndex, int offset, ReadOnlyMemory<char> segment) {
-        if ((uint)lineIndex >= (uint)_lines.Count)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
-        if (segment.IsEmpty)
+    /// <param name="builder">已初始化的段列表构建器，包含原始文本。</param>
+    public OverlayBuilder(SegmentListBuilder builder) {
+        _builder = builder ?? throw new ArgumentNullException(nameof(builder));
+        _sourceLength = builder.Length;
+    }
+
+    /// <summary>原始文本长度（Build 前的快照长度）。</summary>
+    public int SourceLength => _sourceLength;
+
+    /// <summary>已声明的叠加操作数量。</summary>
+    public int PendingCount => _pendingOverlays.Count;
+
+    /// <summary>总行数。</summary>
+    public int LineCount => _builder.LineCount;
+
+    #region 基础插入操作
+
+    /// <summary>
+    /// 在指定偏移处插入标记。
+    /// </summary>
+    /// <param name="offset">基于原始文本的字符偏移。</param>
+    /// <param name="content">要插入的内容。</param>
+    /// <param name="priority">优先级（默认 0，数值越小在同一位置越靠前）。</param>
+    /// <exception cref="ArgumentOutOfRangeException">偏移超出原始文本范围。</exception>
+    public void InsertAt(int offset, ReadOnlyMemory<char> content, int priority = 0) {
+        ValidateOffset(offset, allowEnd: true);
+        AddOverlay(offset, content, priority);
+    }
+
+    /// <summary>
+    /// 在指定偏移处插入标记。
+    /// </summary>
+    public void InsertAt(int offset, string content, int priority = 0) {
+        ArgumentNullException.ThrowIfNull(content);
+        InsertAt(offset, content.AsMemory(), priority);
+    }
+
+    private void AddOverlay(int offset, ReadOnlyMemory<char> content, int priority) {
+        if (content.IsEmpty)
             return;
 
-        ref var line = ref _lines[lineIndex];
-
-        if (offset < 0 || offset > line.Length)
-            throw new ArgumentOutOfRangeException(nameof(offset));
-
-        Debug.Assert(!ContainsLineEnding(segment.Span), "Segment passed to InsertSegmentCore must not contain line endings.");
-        // 快速路径：行首插入
-        if (offset == 0) {
-            line.Segments.Insert(0, segment);
-            line.Length += segment.Length;
-            InvalidateOffsetsFrom(lineIndex + 1);
-            return;
-        }
-
-        // 快速路径：行尾追加
-        if (offset == line.Length) {
-            line.Segments.Add(segment);
-            line.Length += segment.Length;
-            InvalidateOffsetsFrom(lineIndex + 1);
-            return;
-        }
-
-        // 一般情况：在行中间插入，需要定位并可能分割现有段
-        var (segIndex, segOffset) = FindSegmentPosition(ref line, offset);
-
-        if (segOffset == 0) {
-            // 刚好在某段的起始位置，直接插入
-            line.Segments.Insert(segIndex, segment);
-        } else {
-            // 需要分割当前段
-            var currentSeg = line.Segments[segIndex];
-            var leftPart = currentSeg.Slice(0, segOffset);
-            var rightPart = currentSeg.Slice(segOffset);
-
-            // 替换为：left + new + right
-            line.Segments[segIndex] = leftPart;
-            line.Segments.Insert(segIndex + 1, segment);
-            if (!rightPart.IsEmpty) {
-                line.Segments.Insert(segIndex + 2, rightPart);
-            }
-        }
-
-        line.Length += segment.Length;
-        InvalidateOffsetsFrom(lineIndex + 1);
-    }
-
-    private static bool ContainsLineEnding(ReadOnlySpan<char> span) {
-        for (int i = 0; i < span.Length; i++) {
-            var ch = span[i];
-            if (ch == '\r' || ch == '\n') {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// 确保文档已包含至少一行，便于统一的 Insert 流程。
-    /// </summary>
-    private void EnsureDocumentInitialized() {
-        if (!_lines.IsEmpty)
-            return;
-
-        _lines.Add(CreateEmptyLine());
-        _offsetsDirty = true;
-    }
-
-    private void InsertNormalizedSegments(int lineIndex, int column, ReadOnlySpan<ReadOnlyMemory<char>> segments) {
-        if (segments.IsEmpty)
-            return;
-        if ((uint)lineIndex >= (uint)_lines.Count)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
-
-        var currentLine = lineIndex;
-        var currentColumn = column;
-
-        for (int i = 0; i < segments.Length; i++) {
-            var segment = segments[i];
-            if (segment.IsEmpty) {
-                continue;
-            }
-
-            InsertNormalizedSegment(ref currentLine, ref currentColumn, segment);
-        }
-    }
-
-    private void InsertNormalizedSegment(ref int lineIndex, ref int column, ReadOnlyMemory<char> segment) {
-        var span = segment.Span;
-        int cursor = 0;
-
-        while (cursor < span.Length) {
-            int breakLength;
-            int breakIndex = FindNextLineBreak(span, cursor, out breakLength);
-            int chunkEnd = breakIndex >= 0 ? breakIndex : span.Length;
-
-            if (chunkEnd > cursor) {
-                var chunk = segment.Slice(cursor, chunkEnd - cursor);
-                InsertSegmentCore(lineIndex, column, chunk);
-                column += chunk.Length;
-            }
-
-            if (breakIndex < 0) {
-                break;
-            }
-
-            SplitLineAt(lineIndex, column);
-            lineIndex++;
-            column = 0;
-            cursor = breakIndex + breakLength;
-        }
-    }
-
-    private static int FindNextLineBreak(ReadOnlySpan<char> span, int start, out int breakLength) {
-        for (int i = start; i < span.Length; i++) {
-            var current = span[i];
-            if (current == '\r') {
-                breakLength = i + 1 < span.Length && span[i + 1] == '\n' ? 2 : 1;
-                return i;
-            }
-
-            if (current == '\n') {
-                breakLength = 1;
-                return i;
-            }
-        }
-
-        breakLength = 0;
-        return -1;
-    }
-
-    /// <summary>
-    /// 在指定列将行拆分成左右两部分，右半部分作为新行插入。
-    /// </summary>
-    private void SplitLineAt(int lineIndex, int column) {
-        if ((uint)lineIndex >= (uint)_lines.Count)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
-
-        ref var line = ref _lines[lineIndex];
-        if (column < 0 || column > line.Length)
-            throw new ArgumentOutOfRangeException(nameof(column));
-
-        if (column == line.Length) {
-            _lines.Insert(lineIndex + 1, CreateEmptyLine());
-            InvalidateOffsetsFrom(lineIndex + 1);
-            return;
-        }
-
-        var sourceSegments = line.Segments;
-        int capacity = Math.Max(4, sourceSegments.Count);
-        var leftSegments = new StructList<ReadOnlyMemory<char>>(capacity);
-        var rightSegments = new StructList<ReadOnlyMemory<char>>(capacity);
-        int leftLength = 0;
-        int rightLength = 0;
-        int remaining = column;
-
-        for (int i = 0; i < sourceSegments.Count; i++) {
-            var current = sourceSegments[i];
-            if (current.IsEmpty) {
-                continue;
-            }
-
-            if (remaining > 0) {
-                if (remaining >= current.Length) {
-                    leftSegments.Add(current);
-                    leftLength += current.Length;
-                    remaining -= current.Length;
-                    continue;
-                }
-
-                var leftSlice = current.Slice(0, remaining);
-                var rightSlice = current.Slice(remaining);
-
-                if (!leftSlice.IsEmpty) {
-                    leftSegments.Add(leftSlice);
-                    leftLength += leftSlice.Length;
-                }
-
-                if (!rightSlice.IsEmpty) {
-                    rightSegments.Add(rightSlice);
-                    rightLength += rightSlice.Length;
-                }
-
-                remaining = 0;
-                continue;
-            }
-
-            rightSegments.Add(current);
-            rightLength += current.Length;
-        }
-
-        Debug.Assert(remaining == 0, "SplitLineAt should consume the requested column.");
-
-        line.Segments = leftSegments;
-        line.Length = leftLength;
-
-        var newLine = new LineMut {
-            Segments = rightSegments,
-            Length = rightLength,
-            Offset = -1
-        };
-
-        _lines.Insert(lineIndex + 1, newLine);
-        InvalidateOffsetsFrom(lineIndex);
-    }
-
-    private static LineMut CreateEmptyLine() => new() {
-        Segments = new StructList<ReadOnlyMemory<char>>(4),
-        Length = 0,
-        Offset = -1
-    };
-
-    /// <summary>
-    /// 在行内查找给定字符偏移所在的段及段内偏移。
-    /// </summary>
-    /// <returns>(段索引, 段内偏移)</returns>
-    private static (int SegmentIndex, int OffsetInSegment) FindSegmentPosition(ref LineMut line, int charOffset) {
-        int accumulated = 0;
-        for (int i = 0; i < line.Segments.Count; i++) {
-            int segLen = line.Segments[i].Length;
-            if (charOffset < accumulated + segLen) {
-                return (i, charOffset - accumulated);
-            }
-            accumulated += segLen;
-        }
-        // 理论上不应到达这里（offset 已验证在范围内）
-        return (line.Segments.Count, 0);
-    }
-
-    /// <summary>
-    /// 标记从指定行开始的所有行 Offset 需要重算。
-    /// </summary>
-    private void InvalidateOffsetsFrom(int startLine) {
-        // 简单策略：标记全局脏，下次访问时重算
-        // 更精细的策略可以只标记 [startLine, end)，但对于突发编辑场景，
-        // 通常会在一次渲染结束前多次编辑，最后统一重算更高效。
-        _offsetsDirty = true;
-    }
-
-    /// <summary>
-    /// 确保所有行的 Offset 是最新的。
-    /// </summary>
-    private void EnsureOffsets() {
-        if (!_offsetsDirty) return;
-
-        int offset = 0;
-        for (int i = 0; i < _lines.Count; i++) {
-            ref var line = ref _lines[i];
-            line.Offset = offset;
-            offset += line.Length;
-        }
-        _offsetsDirty = false;
-    }
-
-    #region 位置查询
-
-    /// <summary>
-    /// 从全局字符偏移获取 (行索引, 列偏移)。
-    /// </summary>
-    /// <param name="offset">全局字符偏移（不含换行符计数）。</param>
-    /// <returns>(行索引, 行内列偏移)</returns>
-    /// <exception cref="ArgumentOutOfRangeException">偏移超出范围时抛出。</exception>
-    public (int Line, int Column) GetPosition(int offset) {
-        if (_lines.IsEmpty) {
-            if (offset == 0) return (0, 0);
-            throw new ArgumentOutOfRangeException(nameof(offset));
-        }
-
-        EnsureOffsets();
-
-        if (offset < 0 || offset > Length)
-            throw new ArgumentOutOfRangeException(nameof(offset));
-
-        // 二分查找：找到 Offset <= offset 的最后一行
-        int lineIndex = _lines.BinarySearchBy<int, LineOffsetSelector>(offset);
-
-        if (lineIndex < 0) {
-            // 未精确匹配，~lineIndex 是"应插入位置"，减 1 得到包含该 offset 的行
-            lineIndex = ~lineIndex - 1;
-        }
-
-        // 边界保护
-        lineIndex = Math.Clamp(lineIndex, 0, _lines.Count - 1);
-
-        ref var line = ref _lines[lineIndex];
-        int column = offset - line.Offset;
-
-        // 处理 offset 正好在行尾的情况（可能属于下一行的起始）
-        if (column > line.Length && lineIndex + 1 < _lines.Count) {
-            lineIndex++;
-            column = 0;
-        }
-
-        return (lineIndex, Math.Min(column, line.Length));
-    }
-
-    /// <summary>
-    /// 从 (行索引, 列偏移) 计算全局字符偏移。
-    /// </summary>
-    public int GetOffset(int line, int column) {
-        if ((uint)line >= (uint)_lines.Count)
-            throw new ArgumentOutOfRangeException(nameof(line));
-
-        EnsureOffsets();
-        ref var lineData = ref _lines[line];
-
-        if (column < 0 || column > lineData.Length)
-            throw new ArgumentOutOfRangeException(nameof(column));
-
-        return lineData.Offset + column;
+        _pendingOverlays.Add(new PendingOverlay(offset, content, priority, _nextSequence++));
     }
 
     #endregion
 
-    #region 行级操作
+    #region 行列插入操作
 
     /// <summary>
-    /// 删除指定行。
+    /// 在指定行列位置插入内容。
     /// </summary>
-    public void RemoveLine(int lineIndex) {
-        if ((uint)lineIndex >= (uint)_lines.Count)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
+    /// <param name="line">行索引（0-based）。</param>
+    /// <param name="column">列偏移（0-based）。</param>
+    /// <param name="content">要插入的内容。</param>
+    /// <param name="priority">优先级（默认 0，数值越小在同一位置越靠前）。</param>
+    public void InsertAtLine(int line, int column, ReadOnlyMemory<char> content, int priority = 0) {
+        int offset = _builder.GetOffset(line, column);
+        ValidateOffset(offset, allowEnd: true);
+        AddOverlay(offset, content, priority);
+    }
 
-        _lines.RemoveAt(lineIndex);
-        InvalidateOffsetsFrom(lineIndex);
+    /// <summary>
+    /// 在指定行列位置插入内容。
+    /// </summary>
+    public void InsertAtLine(int line, int column, string content, int priority = 0) {
+        ArgumentNullException.ThrowIfNull(content);
+        InsertAtLine(line, column, content.AsMemory(), priority);
+    }
+
+    /// <summary>
+    /// 使用行列范围包围文本。
+    /// </summary>
+    public void SurroundRangeLines(
+        int startLine,
+        int startColumn,
+        int endLine,
+        int endColumn,
+        ReadOnlyMemory<char> prefix,
+        ReadOnlyMemory<char> suffix,
+        int prefixPriority = 0,
+        int suffixPriority = 0) {
+        int start = _builder.GetOffset(startLine, startColumn);
+        int end = _builder.GetOffset(endLine, endColumn);
+        SurroundRange(start, end, prefix, suffix, prefixPriority, suffixPriority);
+    }
+
+    /// <summary>
+    /// 使用行列范围包围文本。
+    /// </summary>
+    public void SurroundRangeLines(
+        int startLine,
+        int startColumn,
+        int endLine,
+        int endColumn,
+        string prefix,
+        string suffix,
+        int prefixPriority = 0,
+        int suffixPriority = 0) {
+        ArgumentNullException.ThrowIfNull(prefix);
+        ArgumentNullException.ThrowIfNull(suffix);
+        SurroundRangeLines(startLine, startColumn, endLine, endColumn,
+            prefix.AsMemory(), suffix.AsMemory(), prefixPriority, suffixPriority);
     }
 
     #endregion
 
-    #region 段级操作（公开 API）
+    #region 包围操作
 
     /// <summary>
-    /// 在全局字符偏移处插入一批文本段，段内可包含换行符。
+    /// 用前缀和后缀包围指定范围。
     /// </summary>
-    public void Insert(int offset, ReadOnlySpan<ReadOnlyMemory<char>> segments) {
-        if (segments.IsEmpty)
-            return;
-        if (offset < 0 || offset > Length)
-            throw new ArgumentOutOfRangeException(nameof(offset));
+    /// <param name="start">范围起始偏移（含）。</param>
+    /// <param name="end">范围结束偏移（不含）。</param>
+    /// <param name="prefix">前缀内容。</param>
+    /// <param name="suffix">后缀内容。</param>
+    /// <param name="prefixPriority">前缀优先级（默认 0）。</param>
+    /// <param name="suffixPriority">后缀优先级（默认 0）。</param>
+    /// <exception cref="ArgumentOutOfRangeException">范围超出原始文本。</exception>
+    /// <exception cref="ArgumentException">start > end。</exception>
+    public void SurroundRange(
+        int start,
+        int end,
+        ReadOnlyMemory<char> prefix,
+        ReadOnlyMemory<char> suffix,
+        int prefixPriority = 0,
+        int suffixPriority = 0) {
+        ValidateRange(start, end);
 
-        EnsureDocumentInitialized();
-        var (line, column) = GetPosition(offset);
-        InsertNormalizedSegments(line, column, segments);
+        if (!prefix.IsEmpty) {
+            AddOverlay(start, prefix, prefixPriority);
+        }
+        if (!suffix.IsEmpty) {
+            AddOverlay(end, suffix, suffixPriority);
+        }
     }
 
     /// <summary>
-    /// 在全局字符偏移处插入单个文本段。
+    /// 用前缀和后缀包围指定范围。
     /// </summary>
-    public void Insert(int offset, ReadOnlyMemory<char> segment) {
-        if (segment.IsEmpty)
-            return;
-        if (offset < 0 || offset > Length)
-            throw new ArgumentOutOfRangeException(nameof(offset));
-
-        EnsureDocumentInitialized();
-        var (line, column) = GetPosition(offset);
-        InsertNormalizedSegment(ref line, ref column, segment);
+    public void SurroundRange(int start, int end, string prefix, string suffix,
+        int prefixPriority = 0, int suffixPriority = 0) {
+        ArgumentNullException.ThrowIfNull(prefix);
+        ArgumentNullException.ThrowIfNull(suffix);
+        SurroundRange(start, end, prefix.AsMemory(), suffix.AsMemory(), prefixPriority, suffixPriority);
     }
 
+    #endregion
+
+    #region 构建
+
     /// <summary>
-    /// 在指定行列位置插入一批文本段，段内可包含换行符。
+    /// 应用所有叠加操作到底层 <see cref="SegmentListBuilder"/>。
     /// </summary>
-    public void Insert(int lineIndex, int column, ReadOnlySpan<ReadOnlyMemory<char>> segments) {
-        if (segments.IsEmpty)
-            return;
-        if (lineIndex < 0)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
-
-        bool appendAtEnd = lineIndex == _lines.Count;
-
-        EnsureDocumentInitialized();
-
-        if (appendAtEnd) {
-            if (column != 0)
-                throw new ArgumentOutOfRangeException(nameof(column));
-            Insert(Length, segments);
-            return;
+    /// <returns>包含原始文本和所有叠加内容的段列表构建器。</returns>
+    /// <remarks>
+    /// 叠加操作按原始坐标排序后，从后往前插入以避免坐标漂移。
+    /// 调用后 pending 列表被清空，可继续添加新的叠加操作。
+    /// </remarks>
+    public SegmentListBuilder Build() {
+        if (_pendingOverlays.Count == 0) {
+            return _builder;
         }
 
-        if ((uint)lineIndex >= (uint)_lines.Count)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
+        // 排序：按 offset 升序，同 offset 按 priority 升序
+        _pendingOverlays.Sort();
 
-        ref var line = ref _lines[lineIndex];
-        if (column < 0 || column > line.Length)
-            throw new ArgumentOutOfRangeException(nameof(column));
+        // 从后往前插入，这样前面的 offset 不会受影响
+        for (int i = _pendingOverlays.Count - 1; i >= 0; i--) {
+            var overlay = _pendingOverlays[i];
+            _builder.Insert(overlay.Offset, overlay.Content);
+        }
 
-        InsertNormalizedSegments(lineIndex, column, segments);
+        _pendingOverlays.Clear();
+        _nextSequence = 0;
+
+        return _builder;
     }
 
     /// <summary>
-    /// 在指定行列位置插入单个文本段。
+    /// 清除所有待应用的叠加操作。
     /// </summary>
-    public void Insert(int lineIndex, int column, ReadOnlyMemory<char> segment) {
-        if (segment.IsEmpty)
-            return;
-        if (lineIndex < 0)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
+    public void Clear() {
+        _pendingOverlays.Clear();
+        _nextSequence = 0;
+    }
 
-        bool appendAtEnd = lineIndex == _lines.Count;
+    #endregion
 
-        EnsureDocumentInitialized();
+    #region 验证
 
-        if (appendAtEnd) {
-            if (column != 0)
-                throw new ArgumentOutOfRangeException(nameof(column));
-            Insert(Length, segment);
-            return;
+    private void ValidateOffset(int offset, bool allowEnd) {
+        int max = allowEnd ? _sourceLength : _sourceLength - 1;
+        if (offset < 0 || offset > max) {
+            throw new ArgumentOutOfRangeException(nameof(offset),
+                $"Offset {offset} is out of range [0, {max}].");
         }
+    }
 
-        if ((uint)lineIndex >= (uint)_lines.Count)
-            throw new ArgumentOutOfRangeException(nameof(lineIndex));
-
-        ref var line = ref _lines[lineIndex];
-        if (column < 0 || column > line.Length)
-            throw new ArgumentOutOfRangeException(nameof(column));
-
-        var currentLine = lineIndex;
-        var currentColumn = column;
-        InsertNormalizedSegment(ref currentLine, ref currentColumn, segment);
+    private void ValidateRange(int start, int end) {
+        if (start < 0 || start > _sourceLength) {
+            throw new ArgumentOutOfRangeException(nameof(start),
+                $"Start {start} is out of range [0, {_sourceLength}].");
+        }
+        if (end < 0 || end > _sourceLength) {
+            throw new ArgumentOutOfRangeException(nameof(end),
+                $"End {end} is out of range [0, {_sourceLength}].");
+        }
+        if (start > end) {
+            throw new ArgumentException($"Start {start} must not be greater than end {end}.");
+        }
     }
 
     #endregion
