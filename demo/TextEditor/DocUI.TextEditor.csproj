@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DocUI.TextEditor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- DocUI 核心库 (同 repo) -->
+    <ProjectReference Include="../../src/DocUI.Text/DocUI.Text.csproj" />
+    <!-- 外部依赖 -->
+    <ProjectReference Include="../../../PieceTreeSharp/src/TextBuffer/TextBuffer.csproj" />
+    <ProjectReference Include="../../../PipeMux/src/PipeMux.Sdk/PipeMux.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>
