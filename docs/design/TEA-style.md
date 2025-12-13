@@ -2,7 +2,7 @@
 ## 核心思想（这部分保持人手写，AI可追加评论，但误直接修改，作为立意锚点）
   - 显式把Agent系统的状态分为[persist state]和[temporary state]两种。[persist state]依靠[增量序列化]和[Append-only History]来落盘，时机为[agent state machine]成功完整完成一次状态转移时。[persist state]必须是自包含的，不能引用[temporary state]。[persist state]的运行时内存状态呈现为Immutable Object Graph，统一支持Builder模式，统一支持增量序列化，增量部分Append-only落盘。从[persist state]查询关联的[temporary state]用System.Runtime.CompilerServices.ConditionalWeakTable<TKey,TValue>实现。
 
-> AI 注：建议把“增量序列化”与“Append-only History”的耦合做成可配置策略（例如 `SnapshotEvery = N`、`HistoryRetention = duration`），以便不同 Agent 选择更高频率的 LiveWindow 一致性或更低的磁盘压力。
+> AI 注：建议把“增量序列化”与“Append-only History”的耦合做成可配置策略（例如 `SnapshotEvery = N`、`HistoryRetention = duration`），以便不同 Agent 选择更高频率的 Window 一致性或更低的磁盘压力。
 
 ## agent state machine
   - Observation
@@ -15,18 +15,18 @@
 - 状态机节点可标注 `Deterministic = true`，框架遇到 nondeterministic 节点时记录额外输入（例如外部 API 响应摘要），避免复播时失真。
 
 ## agent app
-  - LiveWindow
+  - Window
   - Notification
 
 这里可引入“约束层”：
-- LiveWindow 仅引用 `persist state` + 派生 Selector，禁止临时对象穿透，保证可复现。
+- Window 仅引用 `persist state` + 派生 Selector，禁止临时对象穿透，保证可复现。
 - Notification 允许挂载 `HistoryRef`（例如事件 id），UI 上点击即可跳回对应快照，增强可导航性。
 - 为提升复用度，每个 App 提供 `AppCapabilities` 描述（可编辑/只读/需要输入等），框架可基于能力自动编排上下文注入顺序。
 
 ## document user interface
 注入LLM Context的Markdown,就是面向Agent系统中的LLM的DocUI。
 
-可在 DocUI 层加入 `ContextBudgetPlanner`：按照 LiveWindow、Notification、History 各自的重要性和体量，动态分配 Token Budget。接口上暴露 `IContextSlice`，任意 App 都可以返回“最小必要描述 + 可选扩展”，框架按预算裁剪，提升易用性与跨 App 一致性。
+可在 DocUI 层加入 `ContextBudgetPlanner`：按照 Window、Notification、History 各自的重要性和体量，动态分配 Token Budget。接口上暴露 `IContextSlice`，任意 App 都可以返回“最小必要描述 + 可选扩展”，框架按预算裁剪，提升易用性与跨 App 一致性。
 
 ## persist state
 重建系统状态所需的最小必要数据集合。
