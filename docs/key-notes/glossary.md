@@ -62,6 +62,19 @@
 
 ---
 
+## UI-Anchor 体系
+
+| 术语 | 一句话摘要 | 定义位置 | 状态 |
+|------|-----------|---------|------|
+| [UI-Anchor](UI-Anchor.md#ui-anchor) | 为 LLM 提供引用和操作 DocUI 中可见元素的可靠锚点 | UI-Anchor.md | Draft |
+| [Object-Anchor](UI-Anchor.md#object-anchor) | 标识界面中的实体对象（名词），语法 `[Label](obj:type:id)` | UI-Anchor.md | Draft |
+| [Action-Prototype](UI-Anchor.md#action-prototype) | 以函数原型形式披露操作接口，将 UI 转化为 Live API Documentation | UI-Anchor.md | Draft |
+| [Action-Link](UI-Anchor.md#action-link) | 预填充参数的快捷操作链接，相当于 GUI 中的 Button | UI-Anchor.md | Draft |
+| [AnchorTable](UI-Anchor.md#anchorid-结构) | 锚点 ID 到实体的映射表，每次 Context-Projection 重建 | UI-Anchor.md | Draft |
+| [Micro-Wizard](micro-wizard.md#micro-wizard) | 轻量级多步骤交互模式，帮助 LLM 渐进解决局部复杂性 | micro-wizard.md | Draft |
+
+---
+
 ## 弃用术语
 
 | 旧术语 | 替代术语 | 说明 |
@@ -83,3 +96,4 @@
 ---
 
 *本文件格式于 2025-12-14 术语治理架构研讨会后重构为索引格式*
+*UI-Anchor 术语于 2025-12-14 UI-Anchor 研讨会后添加*
