@@ -1,7 +1,33 @@
+# App-For-LLM 与 Capability-Provider
+
 ## App-For-LLM
-- 是一种Agent系统的扩展机制，把关系紧密的一组数据、视图、操作封装为一个整体供LLM使用。
-- 与LLM之间进行双向交互的界面叫做DocUI，包括渲染与操作两个方向。
-- 在DocUI语境下简称App。
+
+> **App-For-LLM** 是一种 Agent 系统的外部扩展机制，独立进程通过 RPC（PipeMux/JSON-RPC）与 Agent 通信，为 Agent 提供额外能力。
+
+特征：
+- 把关系紧密的一组数据、视图、操作封装为一个整体供 LLM 使用
+- 与 LLM 之间进行双向交互的界面叫做 DocUI，包括渲染与操作两个方向
+- 在 DocUI 语境下简称 **App**（注意：此简称仅指 App-For-LLM，不包括 Built-in）
+
+---
+
+## Capability-Provider
+
+> **Capability-Provider** 是通过 DocUI 向 LLM 提供能力的实体的统称，包括 Built-in 和 App-For-LLM 两类。
+
+LLM 通过统一的 DocUI 界面与所有 Capability-Provider 交互，无需区分能力来源。
+
+---
+
+## Built-in
+
+> **Built-in** 是 Agent 内建功能，与 Agent 生命周期绑定，进程内直接调用，可直接访问内部状态。
+
+特点：
+- 直接访问 Agent 内部状态（Agent-History、Context），无需 RPC 序列化
+- 是 Agent 的"器官"，不是"插件"
+
+示例：Recap、History 管理、上下文统计、元认知反射
 
 ---
 
@@ -22,23 +48,21 @@
 
 ### 分层架构
 
-> **绘图偏好**: 优先使用 Mermaid，其次 ASCII art。
-
 ```mermaid
 graph TB
     LLM[LLM]
     DocUI["DocUI (交互界面)<br/>渲染 · 操作管理 · 调用路由 · 结果反馈"]
     BuiltIn["Agent 内建功能<br/>(进程内直接调用)"]
-    App-For-LLM["App-For-LLM (外部扩展)<br/>(RPC 调用独立进程)"]
+    AppForLLM["App-For-LLM (外部扩展)<br/>(RPC 调用独立进程)"]
     
     LLM -->|Tool-Call| DocUI
     DocUI -->|Observation| LLM
     
     DocUI --> BuiltIn
-    DocUI --> App-For-LLM
+    DocUI --> AppForLLM
     
     BuiltIn -.->|"• Recap/History 管理<br/>• 上下文统计<br/>• 元认知反射<br/>• ..."| BuiltIn
-    App-For-LLM -.->|"• MemoryNotebook<br/>• TextEditor<br/>• SystemMonitor<br/>• 第三方 App..."| App-For-LLM
+    AppForLLM -.->|"• MemoryNotebook<br/>• TextEditor<br/>• SystemMonitor<br/>• 第三方 App..."| AppForLLM
 ```
 
 ### 设计原则
@@ -51,7 +75,33 @@ graph TB
 
 4. **不提供内嵌插件机制**：避免"内嵌 vs 外部"的边界模糊。内建功能是 Agent 开发者维护的核心能力；外部扩展是第三方贡献的附加能力。
 
-### 决策记录
+---
+
+## 两类 Capability-Provider 对比
+
+| 类型 | 特点 | 示例 |
+|------|------|------|
+| **Built-in** | 与 Agent 生命周期绑定，进程内直接调用，可直接访问内部状态 | Recap、History 管理、上下文统计 |
+| **App-For-LLM** | 独立进程，通过 RPC 通信，进程级隔离 | MemoryNotebook、TextEditor、第三方扩展 |
+
+---
+
+## 术语使用约束
+
+1. **"App" 简称仅指 App-For-LLM**（外部扩展）
+   - ✅ "这个 App 需要热重载" — 正确，App 是独立进程
+   - ❌ "Recap 是一个 App" — 错误，Recap 是 Built-in
+
+2. **需要统称时使用 "Capability-Provider"**
+   - ✅ "所有 Capability-Provider 都通过 DocUI 暴露能力"
+   - ✅ "LLM 无需区分 Capability-Provider 的类型"
+
+3. **连字符命名风格**
+   - 复合术语统一使用连字符：Context-Projection、Capability-Provider、App-For-LLM、Agent-OS
+
+---
+
+## 决策记录
 
 > **2025-12-12 架构讨论**
 > 
@@ -62,7 +112,4 @@ graph TB
 > - Agent 内建功能直接通过 DocUI 暴露，不是 App
 > - App-For-LLM 专指外部进程扩展
 > 
-> 参见：`agent-team/meeting/2025-12-12-app-process-architecture.md`
-
-## TODO
-需要为使用DocUI的两类实体制定不同的命名，或者统一的接口名。
+> 参见：agent-team/meeting/2025-12-12-app-process-architecture.md
