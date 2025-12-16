@@ -153,17 +153,17 @@ Agent-OS 不解析 Thinking 部分，并不意味着它是无用的或仅供调�
 ```mermaid
 flowchart LR
 
-  subgraph History_Layer[History-Layer]
-    HE[HistoryEntry\n(完整交互记录\n含 Basic + Detail)]
+  subgraph History_Layer["History-Layer"]
+    HE["HistoryEntry<br/>(完整交互记录<br/>含 Basic + Detail)"]
   end
 
   subgraph DocUI_Layer[DocUI / History-View]
-    CP[Context-Projection\n(投影/组装上下文\n受 Token 预算约束)]
-    HM[IHistoryMessage[]\n(跨厂商抽象消息)]
+    CP["Context-Projection<br/>(投影/组装上下文<br/>受 Token 预算约束)"]
+    HM["IHistoryMessage[]<br/>(跨厂商抽象消息)"]
   end
 
-  subgraph Completion_Layer[Abstract-LLM-Request-Layer]
-    CC[ICompletionClient\n(厂商 API 适配器)]
+  subgraph Completion_Layer["Abstract-LLM-Request-Layer"]
+    CC["ICompletionClient<br/>(厂商 API 适配器)"]
   end
 
   HE --> CP --> HM --> CC

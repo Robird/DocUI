@@ -72,6 +72,7 @@
 | [Action-Link](UI-Anchor.md#action-link) | 预填充参数的快捷操作链接，相当于 GUI 中的 Button | UI-Anchor.md | Draft |
 | [AnchorTable](UI-Anchor.md#anchorid-结构) | 锚点 ID 到实体的映射表，每次 Context-Projection 重建 | UI-Anchor.md | Draft |
 | [Micro-Wizard](micro-wizard.md#micro-wizard) | 轻量级多步骤交互模式，帮助 LLM 渐进解决局部复杂性 | micro-wizard.md | Draft |
+| [Error-Feedback](error-feedback.md#error-feedback) | 引导 LLM 从错误状态恢复的交互模式 | error-feedback.md | Draft |
 | [Cursor-And-Selection](cursor-and-selection.md#cursor-and-selection) | 向 LLM 展示光标位置和选区范围的机制 | cursor-and-selection.md | Draft |
 | [Selection-Marker](cursor-and-selection.md#selection-marker) | 代码围栏内的内联标记，标识选区起止位置 | cursor-and-selection.md | Draft |
 | [Selection-Legend](cursor-and-selection.md#selection-legend) | 代码围栏外的图例说明，解释各选区标记的语义 | cursor-and-selection.md | Draft |

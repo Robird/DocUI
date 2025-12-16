@@ -51,7 +51,7 @@ Legend of content:
 
 以下展示了 str_replace 操作的预览界面：
 
-```markdown
+````markdown
 ## TextEditor
   - file: `/example/SomeCode.cs`
 
@@ -60,18 +60,18 @@ Legend of content:
   - `<sel:2>`: 即将被替换成的 new text
 
 Content:
-` ` `csharp
+```csharp
 class MyClass {
     <sel:1>public const</sel:1><sel:2>private static readonly</sel:2> string DefaultName = "some-name";
     public const int DefaultValue = 42;
 }
-` ` `
+```
 
 请选择下一步行动：
   - [确认执行文本替换](link:7 "commit_str_replace(context:0x1234ABCD)")
   - [放弃文本替换](link:8 "cancel(context:0x1234ABCD)")
   - [选取下一匹配](link:9 "select_next_match(context:0x1234ABCD)")
-```
+````
 
 **注**：此示例同时展示了与 [UI-Anchor](UI-Anchor.md) 的协作——Action-Link 提供了操作入口。
 
@@ -83,7 +83,7 @@ class MyClass {
 
 1. **序号区分**：使用 `<sel:1>`, `<sel:2>` 等序号避免多选区混淆
 2. **样式变化**：可选用不同样式（如 `<cursor>`, `<highlight:N>`）表达不同语义
-3. **围栏符号检测**：包裹代码围栏前，先统计最大连续 `` ` `` 长度，避免符号碰撞
+3. **围栏符号检测**：包裹代码围栏前，先统计最大连续 `\`` 长度，避免符号碰撞
 
 ### 与 Micro-Wizard 的协同
 
