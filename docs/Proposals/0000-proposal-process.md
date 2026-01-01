@@ -203,7 +203,7 @@ DocUI 是一个面向 LLM Agent 的 UI 框架，涉及多个相互关联的设�
 2. **锚点命名冲突**: 不同 Proposal 定义同名 Button/Form
    - 缓解：强制命名空间前缀
 
-### 审计要求
+### 核查要求
 
 - 所有 Breaking Change 需要显式标记
 - 安全相关 Proposal 需要额外审阅
